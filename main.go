@@ -108,7 +108,7 @@ danger { color: #d9534f; font-weight: bold; }
 	eventMatchers = []EventMatcher{
 		EventMatcher{
 			"Node is changing state",
-			"WSREP: Shifting",
+			"[Galera] Shifting",
 			func(scanner *bufio.Scanner) *Event {
 				// 2015-10-28 16:36:52 10144 [Note] WSREP: Shifting PRIMARY -> JOINER (TO: 31389)
 				lines := scanLines(scanner, 1)
@@ -130,7 +130,7 @@ danger { color: #d9534f; font-weight: bold; }
 		},
 		EventMatcher{
 			"Quorum results",
-			"WSREP: Quorum results:",
+			"[Galera]: Quorum results:",
 			func(scanner *bufio.Scanner) *Event {
 				// 2015-10-28 14:28:50 553 [Note] WSREP: Quorum results:
 				//     version    = 3,
@@ -174,7 +174,7 @@ danger { color: #d9534f; font-weight: bold; }
 		},
 		EventMatcher{
 			"State Transfer Required",
-			"WSREP: State transfer required:",
+			"[Galera] State transfer required:",
 			func(scanner *bufio.Scanner) *Event {
 				// 2015-10-28 16:36:51 10144 [Note] WSREP: State transfer required:
 				//     Group state: 98ed75de-7c05-11e5-9743-de4abc22bd11:31382
@@ -198,11 +198,12 @@ danger { color: #d9534f; font-weight: bold; }
 				return NewEvent(eventTime, 0, message, lines)
 			},
 		},
+		// TODO: WHY is the below escaping required -- but noplace else?
 		EventMatcher{
 			"WSREP recovered position",
-			"WSREP: Recovered position ",
+			"\\[Galera\\] Recovered position",
 			func(scanner *bufio.Scanner) *Event {
-				// 2017-06-14 14:02:28 139993574066048 [Note] WSREP: Recovered position f3d1aa70-31a3-11e7-908c-f7a5ad9e63b1:40847697
+				// 2023-10-21T00:47:33.152995Z 3 [Note] [MY-000000] [Galera] Recovered position from storage: 8d52cc2a-6faa-11ee-8524-bf84a8bf9f2e:3
 				lines := scanLines(scanner, 1)
 				eventTime := getTimeMysqld(lines[0])
 
@@ -218,7 +219,7 @@ danger { color: #d9534f; font-weight: bold; }
 					recoveredString = printSuccess(recoveredString)
 				}
 
-				message := fmt.Sprintf("Recovered position: %s", recoveredString)
+				message := fmt.Sprintf("Recovered position: %s [UPDATED]", recoveredString)
 
 				return NewEvent(eventTime, 0, message, lines)
 			},
@@ -238,6 +239,7 @@ danger { color: #d9534f; font-weight: bold; }
 				return NewEvent(eventTime, 0, message, lines)
 			},
 		},
+		// TODO: this should get updated
 		EventMatcher{
 			"MySQL ended",
 			" from pid file ",
@@ -252,18 +254,19 @@ danger { color: #d9534f; font-weight: bold; }
 			},
 		},
 		EventMatcher{
-			"MySQL normal shutdown",
-			"mysqld: Normal shutdown",
+			"MySQL shutdown",
+			"[Server] Received SHOWDOWN from user",
 			func(scanner *bufio.Scanner) *Event {
-				// 2017-05-05 14:35:45 139716968405760 [Note] /var/vcap/packages/mariadb/bin/mysqld: Normal shutdown
+				// [Server] Received SHUTDOWN from user <via user signal>. Shutting down mysqld (Version: 8.0.33-25).
 				lines := scanLines(scanner, 1)
 				eventTime := getTimeDefault(lines[0])
 
-				message := printSuccess("Normal Shutdown")
+				message := printSuccess("Normal Shutdown (Updated)")
 
 				return NewEvent(eventTime, 0, message, lines)
 			},
 		},
+		// TODO: this should get updated
 		EventMatcher{
 			"MySQL startup",
 			"starting as process",
@@ -489,6 +492,30 @@ danger { color: #d9534f; font-weight: bold; }
 
 				message := fmt.Sprintf(printSuccess("IST Received"))
 
+				return NewEvent(eventTime, 0, message, lines)
+			},
+		},
+		EventMatcher{
+			"Transfer Initiated (Modified)",
+			"[WSREP] Initiating SST/IST transfer on",
+			func(scanner *bufio.Scanner) *Event {
+				// 2023-10-21T00:57:54.122156Z 0 [Note] [MY-000000] [WSREP] Initiating SST/IST transfer on JOINER side (wsrep_sst_xtrabackup-v2 --role 'joiner' --address '10.0.8.6' ...
+				lines := scanLines(scanner, 1)
+				eventTime := getTimeDefault(lines[0])
+
+				matcher := regexp.MustCompile(`--role '(.*)' --address '(.*?)' --`)
+				matches := matcher.FindStringSubmatch(lines[0])
+				role := matches[1]
+				address := matches[2]
+
+				message := ""
+				if role == "joiner" {
+					message = fmt.Sprintf("Node %s joining via IST/SST", address)
+				} else if role == "donor" {
+					message = fmt.Sprintf("Node %s donating via IST/SST", address)
+				} else {
+					message = printDanger(fmt.Sprintf("ERROR parsing state transfer, parsed role / node = %s / %s .\n", role, address))
+				}
 				return NewEvent(eventTime, 0, message, lines)
 			},
 		},
