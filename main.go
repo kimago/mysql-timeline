@@ -129,6 +129,28 @@ danger { color: #d9534f; font-weight: bold; }
 			},
 		},
 		EventMatcher{
+			"Node being RESTORED to state",
+			"[Galera] Restored",
+			func(scanner *bufio.Scanner) *Event {
+				// 2024-06-02T20:01:24.696669Z 0 [Note] [MY-000000] [Galera] Restored state OPEN -> SYNCED (6011486381)
+				lines := scanLines(scanner, 1)
+				eventTime := getTimeDefault(lines[0])
+
+				matcher := regexp.MustCompile(` Restored state (.*) -> (.*) \([0-9]*\)`)
+				matches := matcher.FindStringSubmatch(lines[0])
+
+				message := fmt.Sprintf("RESTORING: %s to ", matches[1])
+
+				if shiftState[matches[1]] > shiftState[matches[2]] {
+					message = message + printDanger(matches[2])
+				} else {
+					message = message + printSuccess(matches[2])
+				}
+
+				return NewEvent(eventTime, 0, message, lines)
+			},
+		},
+		EventMatcher{
 			"Quorum results",
 			"[Galera]: Quorum results:",
 			func(scanner *bufio.Scanner) *Event {
